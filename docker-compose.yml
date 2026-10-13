@@ -1,0 +1,42 @@
+services:
+  mysql-compra:
+    image: mysql:8.0
+    container_name: mysql-compra
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-compradb}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "${MYSQL_PORT:-3310}:3306"
+    volumes:
+      - mysql_compra_data:/var/lib/mysql
+    networks:
+      - pasteleria-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ms-compra:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ms-compra
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8085}:${SERVER_PORT:-8085}"
+    env_file:
+      - .env
+    depends_on:
+      mysql-compra:
+        condition: service_healthy
+    networks:
+      - pasteleria-network
+
+networks:
+  pasteleria-network:
+    external: true
+
+volumes:
+  mysql_compra_data:
