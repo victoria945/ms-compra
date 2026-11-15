@@ -7,7 +7,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-compradb}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
     ports:
-      - "${MYSQL_PORT:-3310}:3306"
+      - "127.0.0.1:${MYSQL_PORT:-3310}:3306"
     volumes:
       - mysql_compra_data:/var/lib/mysql
     networks:
@@ -28,11 +28,21 @@ services:
       - "${SERVER_PORT:-8085}:${SERVER_PORT:-8085}"
     env_file:
       - .env
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_ISSUER_URI: ${COGNITO_ISSUER_URI:-}
     depends_on:
       mysql-compra:
         condition: service_healthy
     networks:
       - pasteleria-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:$${SERVER_PORT:-8085}/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
 
 networks:
   pasteleria-network:

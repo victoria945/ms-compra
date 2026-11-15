@@ -48,8 +48,6 @@ public class CompraController {
         return ResponseEntity.ok(compraService.obtenerDetallesPorCompraId(id));
     }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    /*CREAR COMPRA*/
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN','VENDEDOR_SUPERVISOR')")
     public ResponseEntity<CompraResponse> crearCompra(
@@ -60,7 +58,6 @@ public class CompraController {
         CompraResponse response = compraService.crearCompra(request, usuarioRut);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     @PatchMapping("/{id}/estado")
     @PreAuthorize("hasAnyRole('ADMIN','VENDEDOR_SUPERVISOR')")

@@ -1,10 +1,10 @@
 package org.gestionpastelera.ms_compra.service;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
-
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.gestionpastelera.ms_compra.client.InventarioClient;
+import org.gestionpastelera.ms_compra.client.dto.RegistrarLoteClientRequest;
 import org.gestionpastelera.ms_compra.dto.request.CompraRequest;
 import org.gestionpastelera.ms_compra.dto.request.DetalleCompraRequest;
 import org.gestionpastelera.ms_compra.dto.response.CompraResponse;
@@ -15,13 +15,18 @@ import org.gestionpastelera.ms_compra.model.Compra;
 import org.gestionpastelera.ms_compra.model.DetalleCompra;
 import org.gestionpastelera.ms_compra.repository.CompraRepository;
 import org.gestionpastelera.ms_compra.repository.DetalleCompraRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +36,9 @@ public class CompraService {
     private final CompraRepository compraRepository;
     private final CompraMapper compraMapper;
     private final DetalleCompraRepository detalleCompraRepository;
+    private final InventarioClient inventarioClient;
+
+    private static final Pattern MESSAGE_PATTERN = Pattern.compile("\"message\"\\s*:\\s*\"([^\"]*)\"");
 
     @Transactional(readOnly = true)
     public List<CompraResponse> listarCompras(EstadoCompra estado) {
@@ -65,6 +73,7 @@ public class CompraService {
         BigDecimal totalProductos = BigDecimal.ZERO;
         List<DetalleCompra> detalles = new ArrayList<>();
 
+        // Calcula subtotales y total
         for (DetalleCompraRequest detReq : request.getDetalles()) {
             BigDecimal subtotal = detReq.getPrecioUnitario().multiply(BigDecimal.valueOf(detReq.getCantidad()));
             totalProductos = totalProductos.add(subtotal);
@@ -123,6 +132,26 @@ public class CompraService {
         compra.setEstadoCompra(nuevoEstado);
         Compra compraActualizada = compraRepository.save(compra);
 
+        // Registra lotes en inventario
+        if (nuevoEstado == EstadoCompra.RECIBIDA) {
+            LocalDate fechaVencimiento = LocalDate.now().plusDays(7);
+            for (DetalleCompra detalle : compraActualizada.getDetalles()) {
+                RegistrarLoteClientRequest loteRequest = RegistrarLoteClientRequest.builder()
+                        .codigoPastel(detalle.getCodigoPastel())
+                        .nombrePastel(detalle.getNombreProducto())
+                        .cantidad(detalle.getCantidad())
+                        .compraId(compraActualizada.getId())
+                        .fechaVencimiento(fechaVencimiento)
+                        .build();
+                try {
+                    inventarioClient.registrarLote(loteRequest);
+                } catch (FeignException e) {
+                    throw translateFeignException(e, "registrar lote por recepción de compra");
+                }
+            }
+            log.info("Compra #{} marcada como RECIBIDA y lotes registrados en ms-inventario", id);
+        }
+
         return compraMapper.toResponse(compraActualizada);
     }
 
@@ -140,11 +169,32 @@ public class CompraService {
 
     @Transactional(readOnly = true)
     public List<DetalleCompraResponse> obtenerDetallesPorCompraId(Long compraId) {
-        // Validar que la compra exista
         if (!compraRepository.existsById(compraId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No se encontró la orden de compra con ID: " + compraId);
         }
         List<DetalleCompra> detalles = detalleCompraRepository.findByCompraId(compraId);
         return compraMapper.toDetalleResponseList(detalles);
+    }
+
+    // Traduce errores de inventario
+    private RuntimeException translateFeignException(FeignException e, String operacion) {
+        int status = e.status();
+        if (status == 404) {
+            return new ResponseStatusException(HttpStatus.NOT_FOUND, "Recurso no encontrado en servicio de inventario");
+        }
+        if (status == 400 || status == 409) {
+            String body = e.contentUTF8();
+            if (body != null) {
+                Matcher matcher = MESSAGE_PATTERN.matcher(body);
+                if (matcher.find()) {
+                    return new ResponseStatusException(HttpStatus.BAD_REQUEST, matcher.group(1));
+                }
+            }
+            return new ResponseStatusException(HttpStatus.BAD_REQUEST, "Error en servicio de inventario: " + e.getMessage());
+        }
+        if (status == 401 || status == 403) {
+            return new ResponseStatusException(HttpStatus.BAD_REQUEST, "El servicio de inventario rechazó la autorización del usuario actual");
+        }
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "El servicio de inventario no está disponible para " + operacion + ": " + e.getMessage());
     }
 }

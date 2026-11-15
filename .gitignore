@@ -3,7 +3,7 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-### STS ###
+# STS
 .apt_generated
 .classpath
 .factorypath
@@ -13,23 +13,23 @@ target/
 .sts4-cache
 bin/
 
-### IntelliJ IDEA ###
+# IntelliJ IDEA
 .idea
 *.iws
 *.iml
 *.ipr
 
-### NetBeans ###
+# NetBeans
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbattrs.xml
 /build/
 
-### VS Code ###
+# VS Code
 .vscode/
 
-### Environment & Logs ###
+# Entorno y logs
 .env
 !.env.example
 *.log
